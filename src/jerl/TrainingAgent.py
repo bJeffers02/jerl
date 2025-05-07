@@ -5,120 +5,141 @@ import os
 from pathlib import Path
 from datetime import datetime
 import time
-from collections import defaultdict
 import numpy as np
 import torch
 import torch.optim as optim
 from torch.distributions import Categorical
 
 
+support_map = {
+    'model_map' : {
+        'ACLNN' : ActorCriticLNN
+    }, 
+    'optimizer_map' : {
+        'Adam': optim.Adam,
+        'AdamW': optim.AdamW,
+        'RMSprop': optim.RMSprop,
+        'SGD': optim.SGD,
+        'NAdam': optim.NAdam,
+        'RAdam': optim.RAdam
+    },
+    'scheduler_map' : {
+        'StepLR' : optim.lr_scheduler.StepLR
+    },
+    'trainer_map' : {
+        'A2C': A2C,
+        'SAC': SAC, 
+        'PPO': PPO
+    }
+}
+
+
 class TrainingAgent:
+    
 
-
-    def __init__(self, cfg, env):
+    def __init__(self, cfg):
+        
+        
         self.cfg = cfg
-        self.env = env 
-        self.device = self._get_device()
-        self.model = self._initialize_model()
-        self.optimizer = self._get_optimizer()
-        self.scheduler = optim.lr_scheduler.StepLR(
-            self.optimizer, 
-            step_size=cfg.scheduler_step_size, 
-            gamma=cfg.scheduler_gamma
-        )
-        self.trainer = self._get_trainer()
-        self.metrics = defaultdict(list)
+        self.device = _get_device()
+        self.model = _get_model()
+        self.optimizer = _get_optimizer()
+        self.scheduler = _get_scheduler()
+        self.trainer = _get_trainer()
 
 
-    def _get_device(self):
-        if self.cfg.use_cuda:
-            if torch.cuda.is_available():
-                return torch.device('cuda')
+        def _get_device():
+            if self.cfg.use_cuda:
+                if torch.cuda.is_available():
+                    return torch.device('cuda')
+                else:
+                    raise RuntimeError("CUDA is set to True in the config, but CUDA is not available. Exiting.")
             else:
-                raise RuntimeError("CUDA is set to True in the config, but CUDA is not available. Exiting.")
-        else:
-            return torch.device('cpu')
+                return torch.device('cpu')
 
 
-    def _initialize_model(self):
-        if self.cfg.use_save_file:
-            model = ActorCriticLNN(self.cfg.model_dims, device=self.device)
-            model.load_state_dict(torch.load(self.cfg.model_save_file, map_location=self.device))
-        else:
-            model = ActorCriticLNN(self.cfg.model_dims, device=self.device)
-        return model
+        def _get_model():
+            model_map = support_map.model_map
+
+            model_options = self.cfg.get('model', {})
+            type = model_options.get('type', 'ACLNN')
+            model_dims = model_options.get('model_dims', [])
+
+            if type not in model_map:
+                raise ValueError(
+                    f"Unsupported model type: {type}. "
+                    f"Supported model types are: {list(model_map.keys())}"
+                )
+
+            model_cls = model_map[type]
+
+            kwargs = {k: v for k, v in model_options.items() if k not in ('type', 'model_dims')}
+            
+            return model_cls(model_dims, self.device, **kwargs)
 
 
-    def _get_trainer(self):
-        trainer_map = {'A2C': A2C, 'SAC': SAC, 'PPO': PPO}
+        def _get_optimizer():
+            optimizer_map = support_map.optimizer_map
+
+            optimizer_options = self.cfg.get('optimizer', {})
+            type = optimizer_options.get('type', 'Adam')
+            lr = optimizer_options.get('lr', 3e-4)
+
+            if type not in optimizer_map:
+                raise ValueError(
+                    f"Unsupported optimizer: {type}. "
+                    f"Supported optimizers are: {list(optimizer_map.keys())}"
+                )
+
+            optimizer_cls = optimizer_map[type]
+
+            kwargs = {k: v for k, v in optimizer_options.items() if k not in ('type', 'lr')}
+
+            return optimizer_cls(self.model.parameters, lr=lr, **kwargs)
+
+
+        def _get_scheduler():
+            scheduler_map = support_map.scheduler_map
+
+            scheduler_options = self.cfg.get('scheduler', {})
+            type = scheduler_options.get('type', 'StepLR')
+            step_size = scheduler_options.get('step_size', 100)
+            gamma = scheduler_options.get('gamma', 0.9)
+
+            if type not in scheduler_map:
+                raise ValueError(
+                    f"Unsupported scheduler: {type}. "
+                    f"Supported scheduler are: {list(scheduler_map.keys())}"
+                )
+
+            scheduler_cls = scheduler_map[type]
+
+            kwargs = {k: v for k, v in scheduler_options.items() if k not in ('type', 'step_size', 'gamma')}
+
+            return scheduler_cls(self.optimizer, step_size=step_size, gamma=gamma, **kwargs)
+
         
-        trainer_class = trainer_map.get(self.cfg.training_method)
-        if trainer_class is None:
-            raise ValueError(
-                f"Unsupported training method: {self.cfg.training_method}. "
-                f"Supported methods are: {list(trainer_map.keys())}"
-            )
-        
-        return trainer_class(
-            device=self.device,
-            cfg=self.cfg,
-            optimizer=self.optimizer,
-            scheduler=self.scheduler
-        )
+        def _get_trainer():
+            trainer_map = support_map.trainer_map
+            
+            trainer_options = self.cfg.get('trainer', {})
+            type = trainer_options.get('type', 'A2C')
+            gamma = trainer_options.get('gamma', 0.9)
+
+            if type not in trainer_map:
+                raise ValueError(
+                    f"Unsupported training method: {type}. "
+                    f"Supported methods are: {list(trainer_map.keys())}"
+                )
+            
+            trainer_cls = trainer_map[type]
+
+            kwargs = {k: v for k, v in trainer_options.items() if k not in ('type', 'gamma')}
+
+            return trainer_cls(self.device, self.optimizer, self.scheduler, gamma, **kwargs)
 
 
-    def _get_optimizer(self):
-        optimizer_map = {
-            'Adadelta': optim.Adadelta,
-            'Adagrad': optim.Adagrad,
-            'Adam': optim.Adam,
-            'AdamW': optim.AdamW,
-            'SparseAdam': optim.SparseAdam,
-            'Adamax': optim.Adamax,
-            'ASGD': optim.ASGD,
-            'LBFGS': optim.LBFGS,
-            'NAdam': optim.NAdam,
-            'RAdam': optim.RAdam,
-            'RMSprop': optim.RMSprop,
-            'Rprop': optim.Rprop,
-            'SGD': optim.SGD
-        }
-
-        if self.cfg.optimizer not in optimizer_map:
-            raise ValueError(f"Unsupported optimizer: {self.cfg.optimizer}")
-
-        optimizer_class = optimizer_map[self.cfg.optimizer]
-
-        base_params = {
-            'params': self.model.parameters(),
-            'lr': self.cfg.learning_rate
-        }
-
-        param_mapping = {
-            'Adadelta': ['rho', 'eps', 'weight_decay'],
-            'Adagrad': ['lr_decay', 'weight_decay', 'initial_accumulator_value', 'eps'],
-            'Adam': ['betas', 'eps', 'weight_decay', 'amsgrad'],
-            'AdamW': ['betas', 'eps', 'weight_decay', 'amsgrad'],
-            'SparseAdam': ['betas', 'eps'],
-            'Adamax': ['betas', 'eps', 'weight_decay'],
-            'ASGD': ['lambd', 'alpha', 't0', 'weight_decay'],
-            'NAdam': ['betas', 'eps', 'weight_decay', 'momentum_decay'],
-            'RAdam': ['betas', 'eps', 'weight_decay'],
-            'RMSprop': ['alpha', 'eps', 'weight_decay', 'momentum', 'centered'],
-            'Rprop': ['etas', 'step_sizes'],
-            'SGD': ['momentum', 'dampening', 'weight_decay', 'nesterov']
-        }
-
-        params = base_params.copy()
-        for param_name in param_mapping[self.cfg.optimizer]:
-            if not hasattr(self.cfg, param_name):
-                raise ValueError(f"Missing required parameter {param_name} for optimizer {self.cfg.optimizer}")
-            params[param_name] = getattr(self.cfg, param_name)
-
-        return optimizer_class(**params)
-
-
-    def _run_episode(self):
+    def _run_episode(self, env):
         print("Running Episode...")
         start_time = time.perf_counter()
 
@@ -126,9 +147,9 @@ class TrainingAgent:
         
         for i in range(self.cfg.time_steps):
             if i % (self.cfg.time_steps) == 0:
-                state, _ = self.env.reset()
+                state, _ = env.reset()
             action = self._select_action(state)
-            state, reward, done, _, _ = self.env.step(action)
+            state, reward, done, _, _ = env.step(action)
             self.actor_critic.episode_rewards.append(reward)
             episode_reward += reward
             if done:
@@ -149,17 +170,14 @@ class TrainingAgent:
         return action.item()
     
 
-    def train(self):
+    def train(self, env):
         print("Beginning Training...")
 
         episode_num = 0
         
         while True:
             episode_num += 1
-            episode_reward = self._run_episode()
-            
-            # Store metrics
-            self.metrics['rewards'].append(episode_reward)
+            episode_reward = self._run_episode(env)
             
             # Training step
             self.actor_critic.train(self.optimizer, self.scheduler, self.cfg)
