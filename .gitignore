@@ -1,0 +1,60 @@
+# Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+.ENV/
+
+# VSCode settings
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# PyCharm settings
+.idea/
+
+# mypy
+.mypy_cache/
+
+# Pylint
+pylint-report.txt
+pylint-global-rcfile
+
+# Coverage reports
+.coverage
+.coverage.*
+*.coveragerc
+
+# pytest
+.cache/
+nosetests.xml
+coverage.xml
+*.coveragerc
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Distribution tarballs and zips
+*.tar.gz
+*.egg
+*.whl
+
+# Test data
+test_data/
+
+# Logs
+*.log
+
+# OS-generated files (macOS, Windows)
+.DS_Store
+Thumbs.db
