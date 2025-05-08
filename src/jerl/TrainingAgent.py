@@ -138,88 +138,87 @@ class TrainingAgent:
 
             return trainer_cls(self.device, self.optimizer, self.scheduler, gamma, **kwargs)
 
-
-    def _run_episode(self, env):
-        print("Running Episode...")
-        start_time = time.perf_counter()
-
-        episode_reward = 0
-        
-        for i in range(self.cfg.time_steps):
-            if i % (self.cfg.time_steps) == 0:
-                state, _ = env.reset()
-            action = self._select_action(state)
-            state, reward, done, _, _ = env.step(action)
-            self.actor_critic.episode_rewards.append(reward)
-            episode_reward += reward
-            if done:
-                break
-                
-        duration = time.perf_counter() - start_time
-        print(f"Episode Complete in {duration:.2f}s.")
-
-        return episode_reward
     
-
-    def _select_action(self, state):
-        state = np.ndarray.flatten(state)
-        action_probabilities, state_value = self.model(state)
-        m = Categorical(action_probabilities)
-        action = m.sample()
-        self.actor_critic.save_action(action, action_probabilities, state_value)
-        return action.item()
-    
-
     def train(self, env):
+
+
+        def _run_episode():
+
+
+            def _select_action(state):
+                state = np.ndarray.flatten(state)
+                action_probabilities, state_value = self.model(state)
+                m = Categorical(action_probabilities)
+                action = m.sample()
+                self.trainer.save_action(action, action_probabilities, state_value)
+                return action.item()
+            
+
+            print("Running Episode...")
+            start_time = time.perf_counter()
+
+            episode_reward = 0
+            for i in range(self.cfg.time_steps):
+                if i % (self.cfg.time_steps) == 0:
+                    state, _ = env.reset()
+                action = _select_action(state)
+                state, reward, done, _, _ = env.step(action)
+                self.trainer.save_reward(reward)
+                episode_reward += reward
+                if done:
+                    break
+                    
+            duration = time.perf_counter() - start_time
+            print(f"Episode Complete in {duration:.2f}s.")
+
+            return episode_reward
+
+
+        def _log_progress(episode_num):
+            reward = self.metrics['rewards'][-1]
+            print(f'Episode {episode_num} | '
+                  f'Reward: {reward:.2f}')
+
+
+        def _save_checkpoint(episode_num):
+            filepath = f"{self.cfg.output_dir}/saved_models/episode_{episode_num}.pth"
+            torch.save(self.model.state_dict(), filepath)
+
+
+        def _finalize_training(final_reward):
+            print("Finished Training.")
+
+            env_name = env.spec.id
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
+            save_folder = Path(f"{self.cfg.output_dir}/saved_models/final")
+            filename = (
+                f"final_model_"
+                f"{env_name}_"
+                f"rew{final_reward:.0f}_"
+                f"{timestamp}.pth"
+            )
+            full_path = save_folder / filename
+            
+            torch.save(self.model.state_dict(), full_path)
+            print(f"Saved final model as: {full_path}")
+
+
         print("Beginning Training...")
 
-        episode_num = 0
-        
+        episode_num = 0 
         while True:
             episode_num += 1
-            episode_reward = self._run_episode(env)
+            episode_reward = _run_episode(env)
             
             # Training step
-            self.actor_critic.train(self.optimizer, self.scheduler, self.cfg)
-            self._log_progress(episode_num)
+            self.trainer.train()
+            _log_progress(episode_num)
             
             # Checkpointing
             if episode_num % self.cfg.checkpoint_freq == 0:
-                self._save_checkpoint(episode_num)
+                _save_checkpoint(episode_num)
                 
             # Termination condition
             if episode_reward > self.cfg.end_condition:
-                self._finalize_training(episode_num)
-                break
-    
-
-    def _log_progress(self, episode_num):
-        reward = self.metrics['rewards'][-1]
-        avg_reward = np.mean(self.metrics['rewards'][-10:])
-        print(f'Episode {episode_num} | '
-              f'Reward: {reward:.2f} | '
-              f'Average Reward: {avg_reward:.2f}')
-
-
-    def _save_checkpoint(self, episode_num):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        filepath = f"{script_dir}/saved_models/episode_{episode_num}.pth"
-        torch.save(self.model.state_dict(), filepath)
-    
-
-    def _finalize_training(self, episode_num):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        final_reward = self.metrics['rewards'][-1]    
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        save_folder = Path(f"{script_dir}/saved_models/final")
-        filename = (
-            f"final_model_"
-            f"ep{episode_num}_"
-            f"rew{final_reward:.0f}_"
-            f"target{self.cfg.end_condition}_"
-            f"{timestamp}.pth"
-        )
-        full_path = save_folder / filename
-        
-        torch.save(self.model.state_dict(), full_path)
-        print(f"Saved final model as: {full_path}")
+                _finalize_training(episode_num)
+                break   
