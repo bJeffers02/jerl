@@ -10,7 +10,7 @@ eps = np.finfo(np.float32).eps.item()
 
 
 class _TrainingMethod:
-    def __init__(self, optimizer, device=None, scheduler=None):
+    def __init__(self, optimizer, device=torch.device('cpu'), scheduler=None):
         if not isinstance(optimizer, torch.optim.Optimizer):
             raise TypeError(f"'optimizer' must be a torch.optim.Optimizer, got {type(optimizer).__name__}")
         if device is not None and not isinstance(device, torch.device):
@@ -20,7 +20,7 @@ class _TrainingMethod:
         
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.device = device if device is not None else torch.device('cpu')
+        self.device = device
 
         self.params = [
         p for group in self.optimizer.param_groups
@@ -40,12 +40,17 @@ class _TrainingMethod:
 
 
 class A2C(_TrainingMethod):
-    def __init__(self, device, optimizer, scheduler, **kwargs):
+    def __init__(self, device, optimizer, scheduler, gamma=0.9, gae_lambda=0.95, initial_entropy_coef=0.1, min_entropy_coef=0.001, **kwargs):
         super(A2C, self).__init__(device, optimizer, scheduler)
-        self.gamma: float = kwargs.get('gamma', 0.9)
-        self.gae_lambda = kwargs.get('gae_lambda', 0.95)
-        self.initial_entropy_coef = kwargs.get('initial_entropy_coef', 0.1)
-        self.min_entropy_coef = kwargs.get('min_entropy_coef', 0.001)
+
+        if kwargs:
+            for key in kwargs:
+                print(f"Unexpected argument: '{key}' with value '{kwargs[key]}'")
+
+        self.gamma = gamma
+        self.gae_lambda = gae_lambda
+        self.initial_entropy_coef = initial_entropy_coef
+        self.min_entropy_coef = min_entropy_coef
 
         if not isinstance(self.gamma, float):
             raise TypeError(f"'gamma' must be a float, got {type(self.gamma).__name__}")
@@ -118,20 +123,20 @@ class A2C(_TrainingMethod):
         print(f"Episode Training Complete in {duration:.2f}s.")
 
 
-class SAC(_TrainingMethod):
-    def __init__(self, device, optimizer, scheduler, **kwargs):
-        super(SAC, self).__init__(device, optimizer, scheduler)
+# class SAC(_TrainingMethod):
+#     def __init__(self, device, optimizer, scheduler, **kwargs):
+#         super(SAC, self).__init__(device, optimizer, scheduler)
 
 
-    def train(self):
-        print("Error: SAC training method is not yet implemented.")
-        raise NotImplementedError("SAC training method is under development.")
+#     def train(self):
+#         print("Error: SAC training method is not yet implemented.")
+#         raise NotImplementedError("SAC training method is under development.")
 
-class PPO(_TrainingMethod):
-    def __init__(self, device, optimizer, scheduler, **kwargs):
-        super(PPO, self).__init__(device, optimizer, scheduler)
+# class PPO(_TrainingMethod):
+#     def __init__(self, device, optimizer, scheduler, **kwargs):
+#         super(PPO, self).__init__(device, optimizer, scheduler)
 
 
-    def train(self):
-        print("Error: PPO training method is not yet implemented.")
-        raise NotImplementedError("PPO training method is under development.")
+#     def train(self):
+#         print("Error: PPO training method is not yet implemented.")
+#         raise NotImplementedError("PPO training method is under development.")

@@ -1,7 +1,6 @@
-from jerl.ActorCriticNN import ActorCriticLNN
-from jerl.TrainingMethods import A2C, SAC, PPO
+from jerl.ActorCriticNN import CombinedActorCriticLinear, SeparatedActorCriticLinear
+from jerl.TrainingMethods import A2C
 
-import os
 from pathlib import Path
 from datetime import datetime
 import time
@@ -13,7 +12,8 @@ from torch.distributions import Categorical
 
 support_map = {
     'model_map' : {
-        'ACLNN' : ActorCriticLNN
+        'combined_linear' : CombinedActorCriticLinear,
+        'separated_linear' : SeparatedActorCriticLinear
     }, 
     'optimizer_map' : {
         'Adam': optim.Adam,
@@ -27,9 +27,7 @@ support_map = {
         'StepLR' : optim.lr_scheduler.StepLR
     },
     'trainer_map' : {
-        'A2C': A2C,
-        'SAC': SAC, 
-        'PPO': PPO
+        'A2C': A2C
     }
 }
 
@@ -41,6 +39,7 @@ class TrainingAgent:
         
         
         self.cfg = cfg
+        self.training_options = self.cfg.training_options
         self.device = _get_device()
         self.model = _get_model()
         self.optimizer = _get_optimizer()
@@ -49,20 +48,35 @@ class TrainingAgent:
 
 
         def _get_device():
-            if self.cfg.use_cuda:
-                if torch.cuda.is_available():
-                    return torch.device('cuda')
-                else:
-                    raise RuntimeError("CUDA is set to True in the config, but CUDA is not available. Exiting.")
-            else:
+            device = self.training_options.get('device', 'cpu')
+           
+            if not isinstance(device, str):
+                raise TypeError(f"'device' must be a string, but got {type(device).__name__}.")
+
+            device = device.lower().strip()
+
+            if device.startswith("cuda"):
+                if not torch.cuda.is_available():
+                    raise RuntimeError(f"'device' is set to '{device}', but CUDA is not available.")
+                if ':' in device:
+                    try:
+                        index = int(device.split(':')[1])
+                        if index >= torch.cuda.device_count():
+                            raise ValueError(f"Requested CUDA device index {index}, but only {torch.cuda.device_count()} available.")
+                    except ValueError:
+                        raise ValueError(f"Invalid CUDA device format: '{device}'. Expected 'cuda' or 'cuda:<index>'.")
+                return torch.device(device) 
+            elif device == "cpu":
                 return torch.device('cpu')
+            else:
+                raise ValueError(f"Unsupported device: {device}. Supported: 'cpu', 'cuda', 'cuda:<index>'") 
 
 
         def _get_model():
             model_map = support_map.model_map
 
             model_options = self.cfg.get('model', {})
-            type = model_options.get('type', 'ACLNN')
+            type = model_options.get('type', 'combined_linear')
             model_dims = model_options.get('model_dims', [])
 
             if type not in model_map:
@@ -75,7 +89,7 @@ class TrainingAgent:
 
             kwargs = {k: v for k, v in model_options.items() if k not in ('type', 'model_dims')}
             
-            return model_cls(model_dims, self.device, **kwargs)
+            return model_cls(model_dims, device=self.device, **kwargs)
 
 
         def _get_optimizer():
@@ -95,7 +109,7 @@ class TrainingAgent:
 
             kwargs = {k: v for k, v in optimizer_options.items() if k not in ('type', 'lr')}
 
-            return optimizer_cls(self.model.parameters, lr=lr, **kwargs)
+            return optimizer_cls(self.model.parameters(), lr=lr, **kwargs)
 
 
         def _get_scheduler():
@@ -124,7 +138,6 @@ class TrainingAgent:
             
             trainer_options = self.cfg.get('trainer', {})
             type = trainer_options.get('type', 'A2C')
-            gamma = trainer_options.get('gamma', 0.9)
 
             if type not in trainer_map:
                 raise ValueError(
@@ -134,9 +147,9 @@ class TrainingAgent:
             
             trainer_cls = trainer_map[type]
 
-            kwargs = {k: v for k, v in trainer_options.items() if k not in ('type', 'gamma')}
+            kwargs = {k: v for k, v in trainer_options.items() if k not in ('type')}
 
-            return trainer_cls(self.device, self.optimizer, self.scheduler, gamma, **kwargs)
+            return trainer_cls(self.device, self.optimizer, self.scheduler, **kwargs)
 
     
     def train(self, env):
