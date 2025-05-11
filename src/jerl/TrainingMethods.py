@@ -13,7 +13,7 @@ class _TrainingMethod:
     def __init__(self, optimizer, device=torch.device('cpu'), scheduler=None):
         if not isinstance(optimizer, torch.optim.Optimizer):
             raise TypeError(f"'optimizer' must be a torch.optim.Optimizer, got {type(optimizer).__name__}")
-        if device is not None and not isinstance(device, torch.device):
+        if not isinstance(device, torch.device):
             raise TypeError(f"'device' must be a torch.device, got {type(device).__name__}")
         if scheduler is not None and not isinstance(scheduler, torch.optim.lr_scheduler._LRScheduler):
             raise TypeError(f"'scheduler' must be a torch.optim.lr_scheduler._LRScheduler, got {type(scheduler).__name__}")
@@ -32,16 +32,32 @@ class _TrainingMethod:
 
 
     def save_action(self, action, prob: torch.Tensor, value: torch.Tensor):
+        if not torch.is_tensor(prob):
+            raise TypeError(f"`prob` must be a torch.Tensor, got {type(prob)}")
+        if not torch.allclose(prob.sum(), torch.tensor(1.0), atol=1e-3):
+            raise ValueError("`prob` must sum to ~1 (invalid action distribution)")
+        if value.dim() != 1:
+            raise ValueError(f"`value` must be 1D (got shape {value.shape})")
         self.episode_actions.append(SavedAction(action, prob, value))
 
 
     def save_reward(self, reward):
+        if not isinstance(reward, (float, int, torch.Tensor)):
+            raise TypeError(f"`reward` must be float/int/torch.Tensor, got {type(reward)}")
         self.episode_rewards.append(reward)
 
 
 class A2C(_TrainingMethod):
-    def __init__(self, device, optimizer, scheduler, gamma=0.9, gae_lambda=0.95, initial_entropy_coef=0.1, min_entropy_coef=0.001, **kwargs):
-        super(A2C, self).__init__(device, optimizer, scheduler)
+    def __init__(self, device, optimizer, scheduler,
+                gamma=0.9, 
+                gae_lambda=0.95, 
+                initial_entropy_coef=0.1, 
+                min_entropy_coef=0.001, 
+                entropy_decay=0.99, 
+                max_grad_norm=1.0, 
+                **kwargs
+                ):
+        super(A2C, self).__init__(optimizer, device, scheduler)
 
         if kwargs:
             for key in kwargs:
@@ -51,6 +67,8 @@ class A2C(_TrainingMethod):
         self.gae_lambda = gae_lambda
         self.initial_entropy_coef = initial_entropy_coef
         self.min_entropy_coef = min_entropy_coef
+        self.entropy_decay = entropy_decay
+        self.max_grad_norm = max_grad_norm
 
         if not isinstance(self.gamma, float):
             raise TypeError(f"'gamma' must be a float, got {type(self.gamma).__name__}")
@@ -60,57 +78,54 @@ class A2C(_TrainingMethod):
             raise TypeError(f"'initial_entropy_coef' must be a float, got {type(self.initial_entropy_coef).__name__}")
         if not isinstance(self.min_entropy_coef, float):
             raise TypeError(f"'min_entropy_coef' must be a float, got {type(self.min_entropy_coef).__name__}")
+        if not isinstance(self.entropy_decay, float):
+            raise TypeError(f"'entropy_decay' must be a float, got {type(self.entropy_decay).__name__}")
+        if not isinstance(self.max_grad_norm, float):
+            raise TypeError(f"'max_grad_norm' must be a float, got {type(self.max_grad_norm).__name__}")
         
 
     def train(self):
+        if not self.episode_actions:
+            raise RuntimeError("No actions saved. Call `save_action()` first.")
+        if not self.episode_rewards:
+            raise RuntimeError("No rewards saved. Call `save_reward()` first.")
+
         print("Training on Episode Data...")
         start_time = time.perf_counter()
 
         rewards = torch.tensor(self.episode_rewards, device=self.device)
-        returns = torch.zeros_like(rewards)
-        advantages = torch.zeros_like(rewards)
-        discounted_sum = 0
-
-        # Initialize 'values' here (ensure it's the output from your critic model)
         values = torch.stack([a.value for a in self.episode_actions]).squeeze()
+        actions = torch.stack([a.action for a in self.episode_actions])
+        probs = torch.stack([a.prob for a in self.episode_actions])
 
-        # Calculate returns and advantages (with GAE for smoothing)
+        advantages = torch.zeros_like(rewards)
+        last_advantage = 0
         for t in reversed(range(len(rewards))):
-            discounted_sum = rewards[t] + self.gamma * discounted_sum
-            returns[t] = discounted_sum
-            
-            if t < len(rewards) - 1:
-                # GAE calculation
-                delta_t = rewards[t] + self.gamma * values[t+1] - values[t]
-                advantages[t] = delta_t + self.gamma * self.gae_lambda * advantages[t+1]
-            else:
-                advantages[t] = rewards[t] - values[t]
+            delta = rewards[t] + self.gamma * values[t+1] - values[t] if t < len(rewards)-1 else rewards[t] - values[t]
+            advantages[t] = delta + self.gamma * self.gae_lambda * last_advantage
+            last_advantage = advantages[t]
 
+        advantages = (advantages - advantages.mean()) / (advantages.std() + eps)
+        returns = advantages + values.detach()
         returns = (returns - returns.mean()) / (returns.std() + eps)
 
-        actions = torch.stack([a.action for a in self.episode_actions]) 
-        probs = torch.stack([a.prob for a in self.episode_actions])
+        if torch.isnan(advantages).any() or torch.isinf(advantages).any():
+            raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
+
         log_probs = torch.log(probs.gather(1, actions.unsqueeze(1)) + eps).squeeze()
 
-        # Calculate the advantages
-        advantages = returns - values.detach()
-
-        # Actor-Critic Loss
         actor_loss = (-log_probs * advantages).sum()
         critic_loss = F.smooth_l1_loss(values, returns, reduction='sum')
 
-        # Entropy term for exploration
         entropy = -(probs * probs.log()).sum(dim=1).mean()
-        uncertainty = torch.var(probs, dim=1).mean()  # Variance as exploration measure
-        entropy_coef = max(self.min_entropy_coef, self.initial_entropy_coef * uncertainty)
+        self.entropy_coef = max(self.min_entropy_coef, self.entropy_coef * self.entropy_decay)
 
         self.optimizer.zero_grad()
 
-        # Total loss
-        loss = actor_loss + critic_loss - entropy_coef * entropy
+        loss = actor_loss + critic_loss - self.entropy_coef * entropy
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(self.params, max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.params, max_norm=self.max_grad_norm)
         self.optimizer.step()
         
         if self.scheduler is not None:
@@ -121,6 +136,18 @@ class A2C(_TrainingMethod):
 
         duration = time.perf_counter() - start_time
         print(f"Episode Training Complete in {duration:.2f}s.")
+
+        metrics = {
+            'total_loss': loss.item(),
+            'actor_loss': actor_loss.item(),
+            'critic_loss': critic_loss.item(),
+            'entropy': entropy.item(),
+            'entropy_coef': self.entropy_coef,
+            'mean_advantage': advantages.mean().item(),
+            'time': duration
+        }
+
+        return metrics
 
 
 # class SAC(_TrainingMethod):
