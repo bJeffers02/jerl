@@ -24,7 +24,7 @@ class _TrainingMethod:
 
         self.params = [
         p for group in self.optimizer.param_groups
-        for p in group['params'] if p.grad is not None
+        for p in group['params']
         ]
 
         self.episode_actions = []
@@ -34,7 +34,8 @@ class _TrainingMethod:
     def save_action(self, action, prob: torch.Tensor, value: torch.Tensor):
         if not torch.is_tensor(prob):
             raise TypeError(f"`prob` must be a torch.Tensor, got {type(prob)}")
-        if not torch.allclose(prob.sum(), torch.tensor(1.0), atol=1e-3):
+        target = torch.tensor(1.0, device=prob.device, dtype=prob.dtype)
+        if not torch.allclose(prob.sum(), target, atol=1e-3):
             raise ValueError("`prob` must sum to ~1 (invalid action distribution)")
         if value.dim() != 1:
             raise ValueError(f"`value` must be 1D (got shape {value.shape})")
@@ -42,8 +43,13 @@ class _TrainingMethod:
 
 
     def save_reward(self, reward):
-        if not isinstance(reward, (float, int, torch.Tensor)):
-            raise TypeError(f"`reward` must be float/int/torch.Tensor, got {type(reward)}")
+        if isinstance(reward, torch.Tensor):
+            if reward.numel() != 1:
+                raise ValueError(f"Expected scalar tensor, got tensor with shape {reward.shape}")
+            reward = reward.item()
+        elif not isinstance(reward, (float, int)):
+            raise TypeError(f"Reward must be a float, int, or scalar tensor. Got: {type(reward)}")
+        
         self.episode_rewards.append(reward)
 
 
@@ -65,7 +71,7 @@ class A2C(_TrainingMethod):
 
         self.gamma = gamma
         self.gae_lambda = gae_lambda
-        self.initial_entropy_coef = initial_entropy_coef
+        self.entropy_coef = initial_entropy_coef
         self.min_entropy_coef = min_entropy_coef
         self.entropy_decay = entropy_decay
         self.max_grad_norm = max_grad_norm
@@ -74,8 +80,8 @@ class A2C(_TrainingMethod):
             raise TypeError(f"'gamma' must be a float, got {type(self.gamma).__name__}")
         if not isinstance(self.gae_lambda, float):
             raise TypeError(f"'gae_lambda' must be a float, got {type(self.gae_lambda).__name__}")
-        if not isinstance(self.initial_entropy_coef, float):
-            raise TypeError(f"'initial_entropy_coef' must be a float, got {type(self.initial_entropy_coef).__name__}")
+        if not isinstance(self.entropy_coef, float):
+            raise TypeError(f"'initial_entropy_coef' must be a float, got {type(self.entropy_coef).__name__}")
         if not isinstance(self.min_entropy_coef, float):
             raise TypeError(f"'min_entropy_coef' must be a float, got {type(self.min_entropy_coef).__name__}")
         if not isinstance(self.entropy_decay, float):
@@ -93,10 +99,10 @@ class A2C(_TrainingMethod):
         print("Training on Episode Data...")
         start_time = time.perf_counter()
 
-        rewards = torch.tensor(self.episode_rewards, device=self.device)
         values = torch.stack([a.value for a in self.episode_actions]).squeeze()
         actions = torch.stack([a.action for a in self.episode_actions])
         probs = torch.stack([a.prob for a in self.episode_actions])
+        rewards = torch.tensor(self.episode_rewards, device=self.device, dtype=values.dtype)
 
         advantages = torch.zeros_like(rewards)
         last_advantage = 0
@@ -107,7 +113,6 @@ class A2C(_TrainingMethod):
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + eps)
         returns = advantages + values.detach()
-        returns = (returns - returns.mean()) / (returns.std() + eps)
 
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
             raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
