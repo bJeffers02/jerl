@@ -149,7 +149,7 @@ class A2C(_TrainingMethod):
             'entropy': entropy.item(),
             'entropy_coef': self.entropy_coef,
             'mean_advantage': advantages.mean().item(),
-            'time': duration
+            'training_duration': duration
         }
 
         return metrics

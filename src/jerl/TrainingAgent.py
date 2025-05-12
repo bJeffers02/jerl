@@ -1,6 +1,7 @@
 from jerl.ActorCriticNN import CombinedActorCriticLinear, SeparatedActorCriticLinear
 from jerl.TrainingMethods import A2C
 
+import csv
 from pathlib import Path
 from datetime import datetime
 import time
@@ -37,15 +38,6 @@ class TrainingAgent:
 
     def __init__(self, cfg):
         
-        
-        self.cfg = cfg
-        self.training_options = self.cfg.training_options
-        self.device = _get_device()
-        self.model = _get_model()
-        self.optimizer = _get_optimizer()
-        self.scheduler = _get_scheduler()
-        self.trainer = _get_trainer()
-
 
         def _get_device():
             device = self.training_options.get('device', 'cpu')
@@ -76,16 +68,16 @@ class TrainingAgent:
             model_map = support_map.model_map
 
             model_options = self.cfg.get('model', {})
-            type = model_options.get('type', 'combined_linear')
+            model_type = model_options.get('type', 'combined_linear')
             model_dims = model_options.get('model_dims', [])
 
-            if type not in model_map:
+            if model_type not in model_map:
                 raise ValueError(
-                    f"Unsupported model type: {type}. "
+                    f"Unsupported model type: {model_type}. "
                     f"Supported model types are: {list(model_map.keys())}"
                 )
 
-            model_cls = model_map[type]
+            model_cls = model_map[model_type]
 
             kwargs = {k: v for k, v in model_options.items() if k not in ('type', 'model_dims')}
             
@@ -96,16 +88,16 @@ class TrainingAgent:
             optimizer_map = support_map.optimizer_map
 
             optimizer_options = self.cfg.get('optimizer', {})
-            type = optimizer_options.get('type', 'Adam')
+            optimizer_type = optimizer_options.get('type', 'Adam')
             lr = optimizer_options.get('lr', 3e-4)
 
-            if type not in optimizer_map:
+            if optimizer_type not in optimizer_map:
                 raise ValueError(
-                    f"Unsupported optimizer: {type}. "
+                    f"Unsupported optimizer: {optimizer_type}. "
                     f"Supported optimizers are: {list(optimizer_map.keys())}"
                 )
 
-            optimizer_cls = optimizer_map[type]
+            optimizer_cls = optimizer_map[optimizer_type]
 
             kwargs = {k: v for k, v in optimizer_options.items() if k not in ('type', 'lr')}
 
@@ -116,17 +108,17 @@ class TrainingAgent:
             scheduler_map = support_map.scheduler_map
 
             scheduler_options = self.cfg.get('scheduler', {})
-            type = scheduler_options.get('type', 'StepLR')
+            scheduler_type = scheduler_options.get('type', 'StepLR')
             step_size = scheduler_options.get('step_size', 100)
             gamma = scheduler_options.get('gamma', 0.9)
 
-            if type not in scheduler_map:
+            if scheduler_type not in scheduler_map:
                 raise ValueError(
-                    f"Unsupported scheduler: {type}. "
+                    f"Unsupported scheduler: {scheduler_type}. "
                     f"Supported scheduler are: {list(scheduler_map.keys())}"
                 )
 
-            scheduler_cls = scheduler_map[type]
+            scheduler_cls = scheduler_map[scheduler_type]
 
             kwargs = {k: v for k, v in scheduler_options.items() if k not in ('type', 'step_size', 'gamma')}
 
@@ -137,19 +129,30 @@ class TrainingAgent:
             trainer_map = support_map.trainer_map
             
             trainer_options = self.cfg.get('trainer', {})
-            type = trainer_options.get('type', 'A2C')
+            trainer_type = trainer_options.get('type', 'A2C')
 
-            if type not in trainer_map:
+            if trainer_type not in trainer_map:
                 raise ValueError(
-                    f"Unsupported training method: {type}. "
+                    f"Unsupported training method: {trainer_type}. "
                     f"Supported methods are: {list(trainer_map.keys())}"
                 )
             
-            trainer_cls = trainer_map[type]
+            trainer_cls = trainer_map[trainer_type]
 
             kwargs = {k: v for k, v in trainer_options.items() if k not in ('type')}
 
-            return trainer_cls(self.device, self.optimizer, self.scheduler, **kwargs)
+            return trainer_cls(self.optimizer, self.device, self.scheduler, **kwargs)
+        
+
+        self.cfg = cfg
+        self.training_options = self.cfg.get('training_options')
+        self.device = _get_device()
+        self.model = _get_model()
+        self.optimizer = _get_optimizer()
+        self.scheduler = _get_scheduler()
+        self.trainer = _get_trainer()
+
+        self.full_metrics = []
 
     
     def train(self, env):
@@ -165,14 +168,14 @@ class TrainingAgent:
                 action = m.sample()
                 self.trainer.save_action(action, action_probabilities, state_value)
                 return action.item()
-            
+
 
             print("Running Episode...")
             start_time = time.perf_counter()
 
             episode_reward = 0
-            for i in range(self.cfg.time_steps):
-                if i % (self.cfg.time_steps) == 0:
+            for i in range(self.training_options.time_steps * self.training_options.batch_size):
+                if i % (self.training_options.time_steps) == 0:
                     state, _ = env.reset()
                 action = _select_action(state)
                 state, reward, done, _, _ = env.step(action)
@@ -184,17 +187,20 @@ class TrainingAgent:
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
 
-            return episode_reward
+            metrics = {
+                "episode_reward": episode_reward,
+                "episode_duration": duration
+            }
+            return metrics
 
 
-        def _log_progress(episode_num):
-            reward = self.metrics['rewards'][-1]
-            print(f'Episode {episode_num} | '
-                  f'Reward: {reward:.2f}')
+        def _log_progress(episode_num, metrics):
+            output = ' | '.join(f"{k}: {v}" for k, v in metrics.items())
+            print(f'Episode {episode_num} | {output}')
 
 
         def _save_checkpoint(episode_num):
-            filepath = f"{self.cfg.output_dir}/saved_models/episode_{episode_num}.pth"
+            filepath = f"{self.training_options.output_dir}/saved_models/episode_{episode_num}.pth"
             torch.save(self.model.state_dict(), filepath)
 
 
@@ -203,7 +209,7 @@ class TrainingAgent:
 
             env_name = env.spec.id
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
-            save_folder = Path(f"{self.cfg.output_dir}/saved_models/final")
+            save_folder = Path(f"{self.training_options.output_dir}/saved_models/final")
             filename = (
                 f"final_model_"
                 f"{env_name}_"
@@ -221,17 +227,27 @@ class TrainingAgent:
         episode_num = 0 
         while True:
             episode_num += 1
-            episode_reward = _run_episode(env)
+            episode_metrics = _run_episode(env)
             
-            # Training step
-            self.trainer.train()
-            _log_progress(episode_num)
+            training_metrics = self.trainer.train()
+            combined_metrics = episode_metrics | training_metrics
+        
+            csv_file = Path(f"{self.training_options.output_dir}/metrics.csv")
+            with open(csv_file, 'a', newline='') as csvfile:
+                fieldnames = list(combined_metrics.keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                if csvfile.tell() == 0:
+                    writer.writeheader()
+                writer.writerow(combined_metrics)
+
+            _log_progress(episode_num, combined_metrics)
             
+
             # Checkpointing
-            if episode_num % self.cfg.checkpoint_freq == 0:
+            if episode_num % self.training_options.checkpoint_freq == 0:
                 _save_checkpoint(episode_num)
                 
             # Termination condition
-            if episode_reward > self.cfg.end_condition:
-                _finalize_training(episode_num)
+            if combined_metrics.episode_reward >= self.training_options.end_condition:
+                _finalize_training(combined_metrics.episode_reward)
                 break   
