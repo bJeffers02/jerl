@@ -1,5 +1,13 @@
+try:
+    import torch
+except ImportError:
+    raise ImportError(
+        "PyTorch is not installed. Please install it manually:\n"
+        "CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu\n"
+        "Or visit https://pytorch.org/get-started/locally for CUDA options."
+    )
+
 import time
-import torch
 import torch.nn.functional as F
 import numpy as np
 
@@ -15,8 +23,8 @@ class _TrainingMethod:
             raise TypeError(f"'optimizer' must be a torch.optim.Optimizer, got {type(optimizer).__name__}")
         if not isinstance(device, torch.device):
             raise TypeError(f"'device' must be a torch.device, got {type(device).__name__}")
-        if scheduler is not None and not isinstance(scheduler, torch.optim.lr_scheduler._LRScheduler):
-            raise TypeError(f"'scheduler' must be a torch.optim.lr_scheduler._LRScheduler, got {type(scheduler).__name__}")
+        if scheduler is not None and not isinstance(scheduler, torch.optim.lr_scheduler.LRScheduler):
+            raise TypeError(f"'scheduler' must be a torch.optim.lr_scheduler.LRScheduler, got {type(scheduler).__name__}")
         
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -37,8 +45,8 @@ class _TrainingMethod:
         target = torch.tensor(1.0, device=prob.device, dtype=prob.dtype)
         if not torch.allclose(prob.sum(), target, atol=1e-3):
             raise ValueError("`prob` must sum to ~1 (invalid action distribution)")
-        if value.dim() != 1:
-            raise ValueError(f"`value` must be 1D (got shape {value.shape})")
+        # if value.dim() != 1:
+        #     raise ValueError(f"`value` must be 1D (got shape {value.shape})")
         self.episode_actions.append(SavedAction(action, prob, value))
 
 
@@ -54,7 +62,7 @@ class _TrainingMethod:
 
 
 class A2C(_TrainingMethod):
-    def __init__(self, device, optimizer, scheduler,
+    def __init__(self, optimizer, device, scheduler,
                 gamma=0.9, 
                 gae_lambda=0.95, 
                 initial_entropy_coef=0.1, 
@@ -117,12 +125,15 @@ class A2C(_TrainingMethod):
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
             raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
 
-        log_probs = torch.log(probs.gather(1, actions.unsqueeze(1)) + eps).squeeze()
+        probs = probs.squeeze(1) 
+        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze()
 
         actor_loss = (-log_probs * advantages).sum()
         critic_loss = F.smooth_l1_loss(values, returns, reduction='sum')
 
         entropy = -(probs * probs.log()).sum(dim=1).mean()
+        if torch.isnan(entropy) or torch.isinf(entropy):
+            entropy = torch.tensor(0.0, device=entropy.device)
         self.entropy_coef = max(self.min_entropy_coef, self.entropy_coef * self.entropy_decay)
 
         self.optimizer.zero_grad()

@@ -1,12 +1,20 @@
 from jerl.ActorCriticNN import CombinedActorCriticLinear, SeparatedActorCriticLinear
 from jerl.TrainingMethods import A2C
 
+try:
+    import torch
+except ImportError:
+    raise ImportError(
+        "PyTorch is not installed. Please install it manually:\n"
+        "CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu\n"
+        "Or visit https://pytorch.org/get-started/locally for CUDA options."
+    )
+
 import csv
 from pathlib import Path
 from datetime import datetime
 import time
 import numpy as np
-import torch
 import torch.optim as optim
 from torch.distributions import Categorical
 
@@ -65,7 +73,7 @@ class TrainingAgent:
 
 
         def _get_model():
-            model_map = support_map.model_map
+            model_map = support_map.get('model_map')
 
             model_options = self.cfg.get('model', {})
             model_type = model_options.get('type', 'combined_linear')
@@ -85,7 +93,7 @@ class TrainingAgent:
 
 
         def _get_optimizer():
-            optimizer_map = support_map.optimizer_map
+            optimizer_map = support_map.get('optimizer_map')
 
             optimizer_options = self.cfg.get('optimizer', {})
             optimizer_type = optimizer_options.get('type', 'Adam')
@@ -105,7 +113,7 @@ class TrainingAgent:
 
 
         def _get_scheduler():
-            scheduler_map = support_map.scheduler_map
+            scheduler_map = support_map.get('scheduler_map')
 
             scheduler_options = self.cfg.get('scheduler', {})
             scheduler_type = scheduler_options.get('type', 'StepLR')
@@ -126,7 +134,7 @@ class TrainingAgent:
 
         
         def _get_trainer():
-            trainer_map = support_map.trainer_map
+            trainer_map = support_map.get('trainer_map')
             
             trainer_options = self.cfg.get('trainer', {})
             trainer_type = trainer_options.get('type', 'A2C')
@@ -158,7 +166,7 @@ class TrainingAgent:
     def train(self, env):
 
 
-        def _run_episode():
+        def _run_episode(env):
 
 
             def _select_action(state):
@@ -174,33 +182,40 @@ class TrainingAgent:
             start_time = time.perf_counter()
 
             episode_reward = 0
-            for i in range(self.training_options.time_steps * self.training_options.batch_size):
-                if i % (self.training_options.time_steps) == 0:
+            resets = 0
+            for i in range(self.training_options.get('time_steps') * self.training_options.get('batch_size')):
+                if i % (self.training_options.get('time_steps')) == 0:
                     state, _ = env.reset()
+                    resets += 1
                 action = _select_action(state)
                 state, reward, done, _, _ = env.step(action)
                 self.trainer.save_reward(reward)
                 episode_reward += reward
                 if done:
-                    break
+                    state, _ = env.reset()
+                    resets += 1
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
 
             metrics = {
-                "episode_reward": episode_reward,
+                "episode_reward": episode_reward / resets,
                 "episode_duration": duration
             }
             return metrics
 
 
         def _log_progress(episode_num, metrics):
-            output = ' | '.join(f"{k}: {v}" for k, v in metrics.items())
+            metrics_rounded = {k: round(v, 2) for k, v in metrics.items()}
+            output = ' | '.join(f"{k}: {v}" for k, v in metrics_rounded.items())
             print(f'Episode {episode_num} | {output}')
 
 
         def _save_checkpoint(episode_num):
-            filepath = f"{self.training_options.output_dir}/saved_models/episode_{episode_num}.pth"
+            output_dir = Path(self.training_options.get('output_dir'))
+            checkpoint_dir = output_dir / 'saved_models'
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            filepath = checkpoint_dir / f"episode_{episode_num}.pth"
             torch.save(self.model.state_dict(), filepath)
 
 
@@ -209,7 +224,8 @@ class TrainingAgent:
 
             env_name = env.spec.id
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
-            save_folder = Path(f"{self.training_options.output_dir}/saved_models/final")
+            save_folder = Path(self.training_options.get('output_dir')) / 'saved_models' / 'final'
+            save_folder.mkdir(parents=True, exist_ok=True)
             filename = (
                 f"final_model_"
                 f"{env_name}_"
@@ -232,7 +248,7 @@ class TrainingAgent:
             training_metrics = self.trainer.train()
             combined_metrics = episode_metrics | training_metrics
         
-            csv_file = Path(f"{self.training_options.output_dir}/metrics.csv")
+            csv_file = Path(f"{self.training_options.get('output_dir')}/metrics.csv")
             with open(csv_file, 'a', newline='') as csvfile:
                 fieldnames = list(combined_metrics.keys())
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -244,10 +260,10 @@ class TrainingAgent:
             
 
             # Checkpointing
-            if episode_num % self.training_options.checkpoint_freq == 0:
+            if episode_num % self.training_options.get('checkpoint_freq') == 0:
                 _save_checkpoint(episode_num)
                 
             # Termination condition
-            if combined_metrics.episode_reward >= self.training_options.end_condition:
-                _finalize_training(combined_metrics.episode_reward)
+            if combined_metrics.get('episode_reward') >= self.training_options.get('end_condition'):
+                _finalize_training(combined_metrics.get('episode_reward'))
                 break   

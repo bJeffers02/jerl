@@ -1,4 +1,12 @@
-import torch
+try:
+    import torch
+except ImportError:
+    raise ImportError(
+        "PyTorch is not installed. Please install it manually:\n"
+        "CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu\n"
+        "Or visit https://pytorch.org/get-started/locally for CUDA options."
+    )
+
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
