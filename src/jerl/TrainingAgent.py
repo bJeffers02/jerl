@@ -1,5 +1,6 @@
 from jerl.ActorCriticNN import CombinedActorCriticLinear, SeparatedActorCriticLinear
 from jerl.TrainingMethods import A2C
+from jerl.Plotter import Plotter
 
 try:
     import torch
@@ -160,7 +161,7 @@ class TrainingAgent:
         self.scheduler = _get_scheduler()
         self.trainer = _get_trainer()
 
-        self.full_metrics = []
+        self.plotter = Plotter()
 
     
     def train(self, env):
@@ -196,8 +197,8 @@ class TrainingAgent:
             print(f"Episode Complete in {duration:.2f}s.")
 
             metrics = {
-                "episode_reward": episode_reward,
-                "episode_duration": duration
+                'episode_reward': episode_reward,
+                'episode_duration': duration
             }
             return metrics
 
@@ -206,6 +207,7 @@ class TrainingAgent:
             metrics_rounded = {k: round(v, 2) for k, v in metrics.items()}
             output = ' | '.join(f"{k}: {v}" for k, v in metrics_rounded.items())
             print(f'Episode {episode_num} | {output}')
+            self.plotter.update_data(metrics)
 
 
         def _save_checkpoint(episode_num):
@@ -214,6 +216,7 @@ class TrainingAgent:
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
             filepath = checkpoint_dir / f"episode_{episode_num}.pth"
             torch.save(self.model.state_dict(), filepath)
+            self.plotter.take_screenshots(filename=f"episode_{episode_num}.png", output_dir=output_dir)
 
 
         def _finalize_training(final_reward):
@@ -221,7 +224,8 @@ class TrainingAgent:
 
             env_name = env.spec.id
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
-            save_folder = Path(self.training_options.get('output_dir')) / 'saved_models'
+            output_dir = self.training_options.get('output_dir')
+            save_folder = Path(output_dir) / 'saved_models'
             save_folder.mkdir(parents=True, exist_ok=True)
             filename = (
                 f"final_model_"
@@ -234,8 +238,13 @@ class TrainingAgent:
             torch.save(self.model.state_dict(), full_path)
             print(f"Saved final model as: {full_path}")
 
+            self.plotter.take_screenshots(filename="full_training_graph.png", output_dir=output_dir)
+
 
         print("Beginning Training...")
+        
+        if self.training_options.get('visualize', False):
+            self.plotter.run()
 
         episode_num = 0 
         while True:

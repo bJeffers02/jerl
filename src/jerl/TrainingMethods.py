@@ -107,28 +107,32 @@ class A2C(_TrainingMethod):
         print("Training on Episode Data...")
         start_time = time.perf_counter()
 
-        values = torch.stack([a.value for a in self.episode_actions]).squeeze()
-        actions = torch.stack([a.action for a in self.episode_actions])
-        probs = torch.stack([a.prob for a in self.episode_actions])
+        values = torch.stack([a.value for a in self.episode_actions]).squeeze().to(device=self.device)
+        actions = torch.stack([a.action for a in self.episode_actions]).to(device=self.device)
+        probs = torch.stack([a.prob for a in self.episode_actions]).squeeze(1).to(device=self.device)
+        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze() 
         rewards = torch.tensor(self.episode_rewards, device=self.device, dtype=values.dtype)
-
+        
+        returns = torch.zeros_like(rewards)
         advantages = torch.zeros_like(rewards)
-        last_advantage = 0
+        
+        discounted_sum = torch.tensor(0.0, device=rewards.device, dtype=rewards.dtype)
+        last_advantage = torch.tensor(0.0, device=rewards.device, dtype=rewards.dtype)
         for t in reversed(range(len(rewards))):
-            delta = rewards[t] + self.gamma * values[t+1] - values[t] if t < len(rewards)-1 else rewards[t] - values[t]
+            discounted_sum = rewards[t] + self.gamma * discounted_sum
+            returns[t] = discounted_sum
+            if t < len(rewards) - 1:
+                delta = rewards[t] + self.gamma * values[t + 1] - values[t]
+            else:
+                delta = rewards[t] - values[t] 
             advantages[t] = delta + self.gamma * self.gae_lambda * last_advantage
             last_advantage = advantages[t]
-
-        returns = advantages + values.detach()
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + eps)
         advantages = torch.clamp(advantages, -10, 10)
 
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
             raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
-
-        probs = probs.squeeze(1) 
-        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze() 
 
         actor_loss = (-log_probs * advantages).sum()
         critic_loss = F.mse_loss(values, returns)
