@@ -8,16 +8,16 @@ cfg = {
         "time_steps": 100,
         "batch_size": 5,
         "output_dir": "/home/bjeffers/Python_Projects/jerl/demo/cartpole-v1",
-        "checkpoint_freq": 1000,
+        "checkpoint_freq": -1,
         "end_condition": 1000
     },
     "model":{
         "type": "combined_linear",
-        "model_dims": [4, 64, 128, 64, 2]
+        "model_dims": [4, 128, 2]
     },
     "optimizer": {
         "type": "Adam",
-        "lr": 3e-4
+        "lr": 3e-3
     },
     "scheduler": {
         "type": "StepLR",
@@ -26,7 +26,7 @@ cfg = {
     },
     "trainer": {
         "type": "A2C",
-        "entropy_decay": 0.995
+        "entropy_decay": 0.9999
     }
 }
 

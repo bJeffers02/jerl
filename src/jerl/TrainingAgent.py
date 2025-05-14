@@ -221,7 +221,7 @@ class TrainingAgent:
 
             env_name = env.spec.id
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
-            save_folder = Path(self.training_options.get('output_dir')) / 'saved_models' / 'final'
+            save_folder = Path(self.training_options.get('output_dir')) / 'saved_models'
             save_folder.mkdir(parents=True, exist_ok=True)
             filename = (
                 f"final_model_"
@@ -257,7 +257,7 @@ class TrainingAgent:
             
 
             # Checkpointing
-            if episode_num % self.training_options.get('checkpoint_freq') == 0:
+            if self.training_options.get('checkpoint_freq') > 0 and episode_num % self.training_options.get('checkpoint_freq') == 0:
                 _save_checkpoint(episode_num)
                 
             # Termination condition

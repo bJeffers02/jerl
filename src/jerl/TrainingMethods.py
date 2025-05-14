@@ -64,7 +64,7 @@ class _TrainingMethod:
 class A2C(_TrainingMethod):
     def __init__(self, optimizer, device, scheduler,
                 gamma=0.9, 
-                gae_lambda=0.95, 
+                gae_lambda=1.0, 
                 initial_entropy_coef=0.1, 
                 min_entropy_coef=0.001, 
                 entropy_decay=0.99, 
@@ -119,15 +119,16 @@ class A2C(_TrainingMethod):
             advantages[t] = delta + self.gamma * self.gae_lambda * last_advantage
             last_advantage = advantages[t]
 
+        returns = advantages + values.detach()
+
         advantages = (advantages - advantages.mean()) / (advantages.std() + eps)
         advantages = torch.clamp(advantages, -10, 10)
-        returns = advantages + values.detach()
 
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
             raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
 
         probs = probs.squeeze(1) 
-        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze()
+        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze() 
 
         actor_loss = (-log_probs * advantages).sum()
         critic_loss = F.mse_loss(values, returns)
