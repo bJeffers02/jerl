@@ -182,24 +182,21 @@ class TrainingAgent:
             start_time = time.perf_counter()
 
             episode_reward = 0
-            resets = 0
             for i in range(self.training_options.get('time_steps') * self.training_options.get('batch_size')):
                 if i % (self.training_options.get('time_steps')) == 0:
                     state, _ = env.reset()
-                    resets += 1
                 action = _select_action(state)
                 state, reward, done, _, _ = env.step(action)
                 self.trainer.save_reward(reward)
                 episode_reward += reward
                 if done:
                     state, _ = env.reset()
-                    resets += 1
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
 
             metrics = {
-                "episode_reward": episode_reward / resets,
+                "episode_reward": episode_reward,
                 "episode_duration": duration
             }
             return metrics

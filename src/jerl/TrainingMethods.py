@@ -120,6 +120,7 @@ class A2C(_TrainingMethod):
             last_advantage = advantages[t]
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + eps)
+        advantages = torch.clamp(advantages, -10, 10)
         returns = advantages + values.detach()
 
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
@@ -129,7 +130,7 @@ class A2C(_TrainingMethod):
         log_probs = torch.log(probs.gather(1, actions) + eps).squeeze()
 
         actor_loss = (-log_probs * advantages).sum()
-        critic_loss = F.smooth_l1_loss(values, returns, reduction='sum')
+        critic_loss = F.mse_loss(values, returns)
 
         entropy = -(probs * probs.log()).sum(dim=1).mean()
         if torch.isnan(entropy) or torch.isinf(entropy):
