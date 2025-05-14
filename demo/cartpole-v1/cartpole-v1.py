@@ -2,22 +2,29 @@ from jerl.TrainingAgent import TrainingAgent
 import gymnasium as gym
 from gymnasium import RewardWrapper
 
+import os
+script_directory = os.path.dirname(os.path.abspath(__file__))
+
 cfg = {
     "training_options": {
         "device": "cpu",
         "time_steps": 100,
         "batch_size": 5,
-        "output_dir": "/home/bjeffers/Python_Projects/jerl/demo/cartpole-v1",
+        "output_dir": script_directory,
         "checkpoint_freq": -1,
-        "end_condition": 1000
+        "end_condition": 480,
+        "visualize": True
     },
     "model":{
         "type": "combined_linear",
-        "model_dims": [4, 128, 2]
+        "model_dims": [4, 64, 64, 2],
+        "activation_funct": "relu",
+        "dtype": "float",
+        "use_layer_norm": True
     },
     "optimizer": {
         "type": "Adam",
-        "lr": 3e-3
+        "lr": 3e-4
     },
     "scheduler": {
         "type": "StepLR",
@@ -26,7 +33,12 @@ cfg = {
     },
     "trainer": {
         "type": "A2C",
-        "entropy_decay": 0.9999
+        "gamma": 0.9, 
+        "gae_lambda": 1.0, 
+        "initial_entropy_coef": 0.1, 
+        "min_entropy_coef": 0.001, 
+        "entropy_decay": 0.99, 
+        "max_grad_norm": 1.0 
     }
 }
 
@@ -35,14 +47,11 @@ Custom CartPole-v1 reward wrapper for Gymnasium.
 
 The default CartPole environment gives a constant +1 reward per step, making the total
 episode reward equal to the number of steps (which provides no meaningful gradient signal
-for policy improvement). This wrapper modifies the reward function to:
-
-1. Give angle-proportional rewards: reward = 1.0 - abs(theta)/0.2095
+for policy improvement). This wrapper modifies the reward function to give 
+angle-proportional rewards: 
+   - Reward = 1.0 - abs(theta)/0.2095
    - Maximum reward (1.0) when pole is perfectly vertical (theta=0)
    - Minimum reward (0.0) when pole reaches threshold angle (|theta|=0.2095 radians)
-   
-2. Maintains termination/truncation conditions from original environment
-3. Works with training loops that auto-reset on termination (no episode breaks required)
 
 This creates a denser, more meaningful reward signal that:
 - Encourages keeping the pole centered (not just surviving)
