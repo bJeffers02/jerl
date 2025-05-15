@@ -19,20 +19,35 @@ eps = np.finfo(np.float32).eps.item()
 
 class _TrainingMethod:
     def __init__(self, optimizer, device=torch.device('cpu'), scheduler=None):
-        if not isinstance(optimizer, torch.optim.Optimizer):
-            raise TypeError(f"'optimizer' must be a torch.optim.Optimizer, got {type(optimizer).__name__}")
+        if isinstance(optimizer, torch.optim.Optimizer):
+            self.optimizer = optimizer
+        elif isinstance(optimizer, (list, tuple)):
+            if len(optimizer) == 1:
+                self.optimizer = optimizer[0]
+            elif len(optimizer) == 2:
+                self.actor_optimizer = optimizer[0]
+                self.critic_optimizer = optimizer[1]
+            else:
+                raise ValueError(f"'optimizer' list must contain 1 or 2 optimizers, got {len(optimizer)}")
+            if not all(isinstance(opt, torch.optim.Optimizer) for opt in optimizer):
+                bad_types = [type(opt).__name__ for opt in optimizer if not isinstance(opt, torch.optim.Optimizer)]
+                raise TypeError(f"All elements in 'optimizer' list must be torch.optim.Optimizer, got {', '.join(bad_types)}")
+        else:
+            raise TypeError(
+                f"'optimizer' must be a torch.optim.Optimizer or a list of 1-2 optimizers, "
+                f"got {type(optimizer).__name__}"
+            )
         if not isinstance(device, torch.device):
             raise TypeError(f"'device' must be a torch.device, got {type(device).__name__}")
         if scheduler is not None and not isinstance(scheduler, torch.optim.lr_scheduler.LRScheduler):
             raise TypeError(f"'scheduler' must be a torch.optim.lr_scheduler.LRScheduler, got {type(scheduler).__name__}")
         
-        self.optimizer = optimizer
         self.scheduler = scheduler
         self.device = device
 
         self.params = [
-        p for group in self.optimizer.param_groups
-        for p in group['params']
+            p for group in self.optimizer.param_groups
+            for p in group['params']
         ]
 
         self.episode_actions = []
