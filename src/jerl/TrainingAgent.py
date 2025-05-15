@@ -94,29 +94,45 @@ class TrainingAgent:
 
 
         def _get_optimizer():
+
+            def _build_optimizer(options, sub_model):
+                optimizer_type = options.get('type', 'Adam')
+                lr = options.get('lr', 3e-4)
+
+                if optimizer_type not in optimizer_map:
+                    raise ValueError(
+                        f"Unsupported optimizer: {optimizer_type}. "
+                        f"Supported optimizers are: {list(optimizer_map.keys())}"
+                    )
+
+                optimizer_cls = optimizer_map[optimizer_type]
+                kwargs = {k: v for k, v in options.items() if k not in ('type', 'lr')}
+                return optimizer_cls(sub_model.parameters(), lr=lr, **kwargs)
+            
             optimizer_map = support_map.get('optimizer_map')
-
             optimizer_options = self.cfg.get('optimizer', {})
-            optimizer_type = optimizer_options.get('type', 'Adam')
-            lr = optimizer_options.get('lr', 3e-4)
+            
+            actor_options = optimizer_options.get('actor')
+            critic_options = optimizer_options.get('critic')
 
-            if optimizer_type not in optimizer_map:
-                raise ValueError(
-                    f"Unsupported optimizer: {optimizer_type}. "
-                    f"Supported optimizers are: {list(optimizer_map.keys())}"
+            if (actor_options is not None) != (critic_options is not None):
+                raise ValueError("Both 'actor' and 'critic' optimizer configs must be provided if using separate optimizers.")
+
+            if actor_options is not None and critic_options is not None:
+                return (
+                    _build_optimizer(actor_options, self.model.actor_network),
+                    _build_optimizer(critic_options, self.model.critic_network),
                 )
-
-            optimizer_cls = optimizer_map[optimizer_type]
-
-            kwargs = {k: v for k, v in optimizer_options.items() if k not in ('type', 'lr')}
-
-            return optimizer_cls(self.model.parameters(), lr=lr, **kwargs)
-
+            
+            return _build_optimizer(optimizer_options, self.model)
 
         def _get_scheduler():
             scheduler_map = support_map.get('scheduler_map')
 
-            scheduler_options = self.cfg.get('scheduler', {})
+            scheduler_options = self.cfg.get('scheduler', None)
+            if scheduler_options is None:
+                return None
+
             scheduler_type = scheduler_options.get('type', 'StepLR')
             step_size = scheduler_options.get('step_size', 100)
             gamma = scheduler_options.get('gamma', 0.9)

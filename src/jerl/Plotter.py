@@ -6,7 +6,7 @@ class Plotter:
         self.groups = {
             "Loss": ["total_loss", "actor_loss", "critic_loss"],
             "Reward": ["episode_reward"],
-            "Entropy": ["entropy", "entropy_coef"],
+            "Entropy": ["entropy", "entropy_coef", "entropy_bonus"],
             "Time": ["episode_duration", "training_duration"],
         }
 
@@ -20,14 +20,15 @@ class Plotter:
         
         
         color_dict = {
-            'episode_reward': (0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0),
-            'episode_duration': (1.0, 0.4980392156862745, 0.054901960784313725, 1.0),
-            'total_loss': (0.17254901960784313, 0.6274509803921569, 0.17254901960784313, 1.0),
-            'actor_loss': (0.8392156862745098, 0.15294117647058825, 0.1568627450980392, 1.0),
-            'critic_loss': (0.5490196078431373, 0.33725490196078434, 0.29411764705882354, 1.0),
-            'entropy': (0.8901960784313725, 0.4666666666666667, 0.7607843137254902, 1.0),
-            'entropy_coef': (0.4980392156862745, 0.4980392156862745, 0.4980392156862745, 1.0),
-            'training_duration': (0.7372549019607844, 0.7411764705882353, 0.13333333333333333, 1.0)
+            'episode_reward': 'steelblue',
+            'episode_duration': 'orange',
+            'total_loss': 'seagreen',
+            'actor_loss': 'crimson',
+            'critic_loss': 'indianred',
+            'entropy': 'orchid',
+            'entropy_coef': 'gray',
+            'entropy_bonus': 'blue',
+            'training_duration': 'olive'
         }
         self.lines = {}
         for ax, (group_title, keys) in zip(self.axes.flat, self.groups.items()):

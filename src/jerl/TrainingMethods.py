@@ -45,11 +45,6 @@ class _TrainingMethod:
         self.scheduler = scheduler
         self.device = device
 
-        self.params = [
-            p for group in self.optimizer.param_groups
-            for p in group['params']
-        ]
-
         self.episode_actions = []
         self.episode_rewards = []
 
@@ -148,23 +143,44 @@ class A2C(_TrainingMethod):
 
         if torch.isnan(advantages).any() or torch.isinf(advantages).any():
             raise ValueError("NaN/Inf detected in advantages. Check rewards/values.")
-
-        actor_loss = (-log_probs * advantages).sum()
-        critic_loss = F.mse_loss(values, returns)
-
+        
         entropy = -(probs * probs.log()).sum(dim=1).mean()
         if torch.isnan(entropy) or torch.isinf(entropy):
             entropy = torch.tensor(0.0, device=entropy.device)
         self.entropy_coef = max(self.min_entropy_coef, self.entropy_coef * self.entropy_decay)
+        entropy_bonus = self.entropy_coef * entropy
 
-        self.optimizer.zero_grad()
+        actor_loss = (-log_probs * advantages).sum() - entropy_bonus
+        critic_loss = F.mse_loss(values, returns)
+        loss = actor_loss + critic_loss
 
-        loss = actor_loss + critic_loss - self.entropy_coef * entropy
-        loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(self.params, max_norm=self.max_grad_norm)
-        self.optimizer.step()
+        if hasattr(self, 'optimizer') and self.optimizer is not None:
+            self.optimizer.zero_grad()
+            loss.backward()
+            params = [p for group in self.optimizer.param_groups for p in group['params']]
+            torch.nn.utils.clip_grad_norm_(params, max_norm=self.max_grad_norm)
+            self.optimizer.step()
         
+        else:
+            has_actor = hasattr(self, 'actor_optimizer') and self.actor_optimizer is not None
+            has_critic = hasattr(self, 'critic_optimizer') and self.critic_optimizer is not None
+
+            if not has_actor or not has_critic:
+                raise RuntimeError("Both actor_optimizer and critic_optimizer must be set if single optimizer is not used.")
+            
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward(retain_graph=True)
+            actor_params = [p for group in self.actor_optimizer.param_groups for p in group['params']]
+            torch.nn.utils.clip_grad_norm_(actor_params, max_norm=self.max_grad_norm)
+            self.actor_optimizer.step()
+            
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            critic_params = [p for group in self.critic_optimizer.param_groups for p in group['params']]
+            torch.nn.utils.clip_grad_norm_(critic_params, max_norm=self.max_grad_norm)
+            self.critic_optimizer.step()
+
+
         if self.scheduler is not None:
             self.scheduler.step()
 
@@ -180,6 +196,7 @@ class A2C(_TrainingMethod):
             'critic_loss': critic_loss.item(),
             'entropy': entropy.item(),
             'entropy_coef': self.entropy_coef,
+            'entropy_bonus': entropy_bonus.item(),
             'mean_advantage': advantages.mean().item(),
             'training_duration': duration
         }
