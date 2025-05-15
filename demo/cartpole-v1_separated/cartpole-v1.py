@@ -25,14 +25,16 @@ cfg = {
         "use_layer_norm": True
     },
     "optimizer": {
-        "type": "Adam",
-        "lr": 3e-4
+        "actor": {
+            "type": "Adam",
+            "lr": 3e-4
+        },
+        "critic": {
+            "type": "Adam",
+            "lr": 3e-4
+        }
     },
-    "scheduler": {
-        "type": "StepLR",
-        "step_size": 100,
-        "gamma": 1.0
-    },
+    "scheduler": None,
     "trainer": {
         "type": "A2C",
         "gamma": 0.9, 
