@@ -8,36 +8,32 @@ script_directory = os.path.dirname(os.path.abspath(__file__))
 cfg = {
     "training_options": {
         "device": "cpu",
-        "time_steps": 100,
+        "time_steps": 1000,
         "batch_size": 5,
         "output_dir": script_directory,
         "checkpoint_freq": -1,
-        "end_condition": 480,
+        "end_condition": 4800,
         "visualize": True
     },
     "model":{
         "type": "combined_linear",
-        "model_dims": [4, 64, 64, 2],
+        "model_dims": [4, 128, 64, 2],
         "activation_funct": "relu",
         "dtype": "float",
         "use_layer_norm": True
     },
     "optimizer": {
         "type": "Adam",
-        "lr": 3e-4
+        "lr": 3e-3
     },
-    "scheduler": {
-        "type": "StepLR",
-        "step_size": 100,
-        "gamma": 1.0
-    },
+    "scheduler": None,
     "trainer": {
         "type": "A2C",
-        "gamma": 0.9, 
-        "gae_lambda": 1.0, 
-        "initial_entropy_coef": 0.1, 
-        "min_entropy_coef": 0.001, 
-        "entropy_decay": 0.99, 
+        "gamma": 0.96, 
+        "gae_lambda": 0.97, 
+        "initial_entropy_coef": 0.15, 
+        "min_entropy_coef": 0.002, 
+        "entropy_decay": 0.993, 
         "max_grad_norm": 1.0 
     }
 }
