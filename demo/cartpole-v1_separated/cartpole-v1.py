@@ -8,40 +8,40 @@ script_directory = os.path.dirname(os.path.abspath(__file__))
 cfg = {
     "training_options": {
         "device": "cpu",
-        "time_steps": 100,
+        "time_steps": 1000,
         "batch_size": 5,
         "output_dir": script_directory,
         "checkpoint_freq": -1,
-        "end_condition": 480,
+        "end_condition": 4800,
         "visualize": True
     },
     "model":{
         "type": "separated_linear",
-        "model_dims": [4, 64, 64, 2],
+        "model_dims": [4, 64, 2],
         "critic_network_dims": [4, 64, 64, 1], 
-        "actor_activation_funct": "relu", 
-        "critic_activation_funct": "relu", 
+        "actor_activation_funct": "tanh", 
+        "critic_activation_funct": "tanh", 
         "dtype": "float",
-        "use_layer_norm": True
+        "use_layer_norm": False
     },
     "optimizer": {
         "actor": {
             "type": "Adam",
-            "lr": 3e-4
+            "lr": 5e-3
         },
         "critic": {
             "type": "Adam",
-            "lr": 3e-4
+            "lr": 5e-3
         }
     },
     "scheduler": None,
     "trainer": {
         "type": "A2C",
-        "gamma": 0.9, 
-        "gae_lambda": 1.0, 
+        "gamma": 0.95, 
+        "gae_lambda": 0.97, 
         "initial_entropy_coef": 0.1, 
-        "min_entropy_coef": 0.001, 
-        "entropy_decay": 0.99, 
+        "min_entropy_coef": 0.002, 
+        "entropy_decay": 0.995, 
         "max_grad_norm": 1.0 
     }
 }
