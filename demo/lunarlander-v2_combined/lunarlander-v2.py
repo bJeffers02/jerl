@@ -29,9 +29,9 @@ cfg = {
     "scheduler": None,
     "trainer": {
         "type": "A2C",
-        "gamma": 0.93, 
+        "gamma": 0.9, 
         "gae_lambda": 0.95, 
-        "initial_entropy_coef": 0.1, 
+        "initial_entropy_coef": 0.5, 
         "min_entropy_coef": 0.001, 
         "entropy_decay": 0.995, 
         "max_grad_norm": 0.7 
