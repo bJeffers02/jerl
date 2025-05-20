@@ -267,6 +267,15 @@ class TrainingAgent:
             episode_num += 1
             episode_metrics = _run_episode(env)
             
+            # Termination condition
+            if episode_metrics.get('episode_reward') >= self.training_options.get('end_condition'):
+                _finalize_training(episode_metrics.get('episode_reward'))
+                break
+
+            # Checkpointing
+            if self.training_options.get('checkpoint_freq') > 0 and episode_num % self.training_options.get('checkpoint_freq') == 0:
+                _save_checkpoint(episode_num)
+
             training_metrics = self.trainer.train()
             combined_metrics = episode_metrics | training_metrics
         
@@ -279,13 +288,3 @@ class TrainingAgent:
                 writer.writerow(combined_metrics)
 
             _log_progress(episode_num, combined_metrics)
-            
-
-            # Checkpointing
-            if self.training_options.get('checkpoint_freq') > 0 and episode_num % self.training_options.get('checkpoint_freq') == 0:
-                _save_checkpoint(episode_num)
-                
-            # Termination condition
-            if combined_metrics.get('episode_reward') >= self.training_options.get('end_condition'):
-                _finalize_training(combined_metrics.get('episode_reward'))
-                break   
