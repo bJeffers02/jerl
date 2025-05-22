@@ -49,26 +49,31 @@ class _TrainingMethod:
         self.episode_rewards = []
 
 
-    def save_action(self, action, prob: torch.Tensor, value: torch.Tensor):
-        if not torch.is_tensor(prob):
-            raise TypeError(f"`prob` must be a torch.Tensor, got {type(prob)}")
-        target = torch.tensor(1.0, device=prob.device, dtype=prob.dtype)
-        if not torch.allclose(prob.sum(), target, atol=1e-3):
-            raise ValueError("`prob` must sum to ~1 (invalid action distribution)")
-        # if value.dim() != 1:
-        #     raise ValueError(f"`value` must be 1D (got shape {value.shape})")
-        self.episode_actions.append(SavedAction(action, prob, value))
+    def save_action(self, action: torch.Tensor, prob: torch.Tensor, value: torch.Tensor):
+        if not self.episode_actions:
+            self.episode_actions = [[] for _ in range(action.shape[0])]
+        
+        if value.dim() == 1:
+            value = value.unsqueeze(-1)
+
+        for i in range(action.shape[0]):
+            saved = SavedAction(
+                action=action[i],
+                prob=prob[i],
+                value=value[i]
+            )
+            self.episode_actions[i].append(saved)
 
 
     def save_reward(self, reward):
-        if isinstance(reward, torch.Tensor):
-            if reward.numel() != 1:
-                raise ValueError(f"Expected scalar tensor, got tensor with shape {reward.shape}")
-            reward = reward.item()
-        elif not isinstance(reward, (float, int)):
-            raise TypeError(f"Reward must be a float, int, or scalar tensor. Got: {type(reward)}")
+        if reward.dim() == 0:
+            reward = reward.unsqueeze(0)
         
-        self.episode_rewards.append(reward)
+        if not self.episode_rewards:
+            self.episode_rewards = [[] for _ in range(reward.shape[0])]
+
+        for i in range(reward.shape[0]):
+            self.episode_rewards[i].append(reward[i].item())
 
 
 class A2C(_TrainingMethod):
@@ -117,12 +122,16 @@ class A2C(_TrainingMethod):
         print("Training on Episode Data...")
         start_time = time.perf_counter()
 
-        values = torch.stack([a.value for a in self.episode_actions]).squeeze().to(device=self.device)
-        actions = torch.stack([a.action for a in self.episode_actions]).to(device=self.device)
-        probs = torch.stack([a.prob for a in self.episode_actions]).squeeze(1).to(device=self.device)
-        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze() 
-        rewards = torch.tensor(self.episode_rewards, device=self.device, dtype=values.dtype)
-        
+        flattened_actions = [a for env_actions in self.episode_actions for a in env_actions]
+        flattened_rewards = [r for env in self.episode_rewards for r in env]
+
+        values = torch.stack([a.value for a in flattened_actions]).squeeze().to(device=self.device)
+        actions = torch.stack([a.action for a in flattened_actions]).unsqueeze(1).to(device=self.device)
+        probs = torch.stack([a.prob for a in flattened_actions]).squeeze(1).to(device=self.device)
+
+        log_probs = torch.log(probs.gather(1, actions) + eps).squeeze(1) 
+        rewards = torch.tensor(flattened_rewards, device=self.device, dtype=values.dtype)
+
         returns = torch.zeros_like(rewards)
         advantages = torch.zeros_like(rewards)
         

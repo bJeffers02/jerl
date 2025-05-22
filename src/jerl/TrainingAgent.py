@@ -11,6 +11,7 @@ except ImportError:
         "Or visit https://pytorch.org/get-started/locally for CUDA options."
     )
 
+from gymnasium.vector import AsyncVectorEnv
 import csv
 from pathlib import Path
 from datetime import datetime
@@ -180,34 +181,40 @@ class TrainingAgent:
         self.plotter = Plotter()
 
     
-    def train(self, env):
+    def train(self, env_fn):
 
 
         def _run_episode(env):
 
 
-            def _select_action(state):
-                state = np.ndarray.flatten(state)
-                action_probabilities, state_value = self.model(state)
+            def _select_action(states):
+                action_probabilities, state_values = self.model(states)
                 m = Categorical(action_probabilities)
-                action = m.sample()
-                self.trainer.save_action(action, action_probabilities, state_value)
-                return action.item()
+                actions = m.sample()
+                self.trainer.save_action(actions, action_probabilities, state_values)
+                return actions.cpu().numpy()
 
 
             print("Running Episode...")
             start_time = time.perf_counter()
 
+            is_vectorized = hasattr(env, "num_envs")
+            
             episode_reward = 0
-            for i in range(self.training_options.get('time_steps') * self.training_options.get('batch_size')):
-                if i % (self.training_options.get('time_steps')) == 0:
-                    state, _ = env.reset()
-                action = _select_action(state)
-                state, reward, done, _, _ = env.step(action)
-                self.trainer.save_reward(reward)
-                episode_reward += reward
-                if done:
-                    state, _ = env.reset()
+            
+            states, _ = env.reset()
+            for _ in range(self.training_options.get('time_steps')):
+                actions = _select_action(states)
+                if actions.size == 1:
+                    actions = actions.item()
+                states, rewards, dones, _, _ = env.step(actions)
+                
+                rewards = torch.as_tensor(rewards)
+                episode_reward += rewards.sum().item()
+                self.trainer.save_reward(rewards)
+                
+                if not is_vectorized and dones:
+                    states, _ = env.reset()
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
@@ -256,11 +263,19 @@ class TrainingAgent:
 
             self.plotter.take_screenshots(filename="full_training_graph.png", output_dir=output_dir)
 
+        def _make_async_vector_env(env_fn, num_envs: int):
+
+            if num_envs == 1:
+                return env_fn()
+    
+            return AsyncVectorEnv([env_fn for _ in range(num_envs)])
 
         print("Beginning Training...")
         
         if self.training_options.get('visualize', False):
             self.plotter.run()
+
+        env = _make_async_vector_env(env_fn, num_envs=self.training_options.get("env_vector_size", 1))
 
         episode_num = 0 
         while True:
