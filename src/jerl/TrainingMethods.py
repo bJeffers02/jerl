@@ -163,6 +163,7 @@ class A2C(_TrainingMethod):
         critic_loss = F.mse_loss(values, returns)
         loss = actor_loss + critic_loss
 
+        loss_time = time.perf_counter() - start_time
         if hasattr(self, 'optimizer') and self.optimizer is not None:
             self.optimizer.zero_grad()
             loss.backward()
@@ -207,7 +208,8 @@ class A2C(_TrainingMethod):
             'entropy_coef': self.entropy_coef,
             'entropy_bonus': entropy_bonus.item(),
             'mean_advantage': advantages.mean().item(),
-            'training_duration': duration
+            'training_duration': duration,
+            'loss_time': loss_time
         }
 
         return metrics

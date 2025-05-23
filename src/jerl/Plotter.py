@@ -8,7 +8,7 @@ class Plotter:
             "Loss": ["total_loss", "actor_loss", "critic_loss"],
             "Reward": ["episode_reward"],
             "Entropy": ["entropy", "entropy_coef", "entropy_bonus"],
-            "Time": ["episode_duration", "training_duration"],
+            "Time": ["episode_duration", "training_duration", "loss_time"],
         }
 
         self.keys = [k for group in self.groups.values() for k in group]
@@ -29,7 +29,8 @@ class Plotter:
             'entropy': 'orchid',
             'entropy_coef': 'gray',
             'entropy_bonus': 'blue',
-            'training_duration': 'olive'
+            'training_duration': 'olive',
+            'loss_time': 'green'
         }
         self.lines = {}
         for ax, (group_title, keys) in zip(self.axes.flat, self.groups.items()):

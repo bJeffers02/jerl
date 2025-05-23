@@ -202,11 +202,13 @@ class TrainingAgent:
             episode_reward = 0
             
             states, _ = env.reset()
+            states = states.reshape(states.shape[0], -1)
             for _ in range(self.training_options.get('time_steps')):
                 actions = _select_action(states)
                 if actions.size == 1:
                     actions = actions.item()
                 states, rewards, dones, _, _ = env.step(actions)
+                states = states.reshape(states.shape[0], -1)
                 
                 rewards = torch.as_tensor(rewards)
                 episode_reward += rewards.sum().item()
@@ -214,6 +216,7 @@ class TrainingAgent:
                 
                 if not is_vectorized and dones:
                     states, _ = env.reset()
+                    states = states.reshape(states.shape[0], -1)
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
