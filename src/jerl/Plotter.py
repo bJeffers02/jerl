@@ -1,3 +1,4 @@
+import csv
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -61,6 +62,15 @@ class Plotter:
 
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
+
+    def update_csv(self, output_dir, new_data: dict):
+        csv_file = Path(f"{output_dir}/metrics.csv")
+        with open(csv_file, 'a', newline='') as csvfile:
+            fieldnames = list(new_data.keys())
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if csvfile.tell() == 0:
+                writer.writeheader()
+            writer.writerow(new_data)
 
     def run(self):
         self.fig.show()

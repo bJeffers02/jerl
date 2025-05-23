@@ -12,7 +12,6 @@ except ImportError:
     )
 
 from gymnasium.vector import AsyncVectorEnv
-import csv
 from pathlib import Path
 from datetime import datetime
 import time
@@ -231,6 +230,7 @@ class TrainingAgent:
             output = ' | '.join(f"{k}: {v}" for k, v in metrics_rounded.items())
             print(f'Episode {episode_num} | {output}')
             self.plotter.update_data(metrics)
+            self.plotter.update_csv(self.training_options.get('output_dir'), metrics)
 
 
         def _save_checkpoint(episode_num):
@@ -242,10 +242,16 @@ class TrainingAgent:
             self.plotter.take_screenshots(filename=f"episode_{episode_num}.png", output_dir=output_dir)
 
 
-        def _finalize_training(final_reward):
+        def _save_model(final_reward):
             print("Finished Training.")
 
-            env_name = env.spec.id
+            if hasattr(env, 'spec') and hasattr(env.spec, 'id'):
+                env_name = env.spec.id
+            elif hasattr(env, 'envs') and len(env.envs) > 0 and hasattr(env.envs[0], 'spec') and hasattr(env.envs[0].spec, 'id'):
+                env_name = env.envs[0].spec.id
+            else:
+                env_name = "null"
+            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") 
             output_dir = self.training_options.get('output_dir')
             save_folder = Path(output_dir) / 'saved_models'
@@ -260,8 +266,6 @@ class TrainingAgent:
             
             torch.save(self.model.state_dict(), full_path)
             print(f"Saved final model as: {full_path}")
-
-            self.plotter.take_screenshots(filename="full_training_graph.png", output_dir=output_dir)
 
         def _make_async_vector_env(env_fn, num_envs: int):
 
@@ -278,14 +282,15 @@ class TrainingAgent:
         env = _make_async_vector_env(env_fn, num_envs=self.training_options.get("env_vector_size", 1))
 
         episode_num = 0 
+        end_loop = False
         while True:
             episode_num += 1
             episode_metrics = _run_episode(env)
             
             # Termination condition
             if episode_metrics.get('episode_reward') >= self.training_options.get('end_condition'):
-                _finalize_training(episode_metrics.get('episode_reward'))
-                break
+                _save_model(episode_metrics.get('episode_reward'))
+                end_loop = True
 
             # Checkpointing
             if self.training_options.get('checkpoint_freq') > 0 and episode_num % self.training_options.get('checkpoint_freq') == 0:
@@ -293,13 +298,9 @@ class TrainingAgent:
 
             training_metrics = self.trainer.train()
             combined_metrics = episode_metrics | training_metrics
-        
-            csv_file = Path(f"{self.training_options.get('output_dir')}/metrics.csv")
-            with open(csv_file, 'a', newline='') as csvfile:
-                fieldnames = list(combined_metrics.keys())
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                if csvfile.tell() == 0:
-                    writer.writeheader()
-                writer.writerow(combined_metrics)
 
             _log_progress(episode_num, combined_metrics)
+            
+            if end_loop:
+                self.plotter.take_screenshots(filename="full_training_graph.png", output_dir=Path(self.training_options.get('output_dir')))
+                break
