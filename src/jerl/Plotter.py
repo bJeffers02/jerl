@@ -21,16 +21,16 @@ class Plotter:
         
         
         color_dict = {
-            'episode_reward': 'steelblue',
+            'episode_reward': 'gold',
             'episode_duration': 'orange',
-            'total_loss': 'seagreen',
-            'actor_loss': 'crimson',
-            'critic_loss': 'indianred',
-            'entropy': 'orchid',
-            'entropy_coef': 'gray',
-            'entropy_bonus': 'blue',
-            'training_duration': 'olive',
-            'loss_time': 'green'
+            'total_loss': 'purple',
+            'actor_loss': 'blue',
+            'critic_loss': 'red',
+            'entropy': 'yellow',
+            'entropy_coef': 'lime',
+            'entropy_bonus': 'green',
+            'training_duration': 'brown',
+            'loss_time': 'cyan'
         }
         self.lines = {}
         for ax, (group_title, keys) in zip(self.axes.flat, self.groups.items()):
