@@ -187,6 +187,7 @@ class TrainingAgent:
 
 
             def _select_action(states):
+                states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
                 action_probabilities, state_values = self.model(states)
                 m = Categorical(action_probabilities)
                 actions = m.sample()
@@ -200,7 +201,6 @@ class TrainingAgent:
             is_vectorized = hasattr(env, "num_envs")
             
             states, _ = env.reset()
-            states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
 
             episode_reward = 0
             for _ in range(self.training_options.get('time_steps')):
@@ -208,7 +208,6 @@ class TrainingAgent:
                 if actions.size == 1:
                     actions = actions.item()
                 states, rewards, dones, _, _ = env.step(actions)
-                states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
 
                 rewards = torch.as_tensor(rewards)
                 episode_reward += rewards.sum().item()
@@ -216,7 +215,6 @@ class TrainingAgent:
                 
                 if not is_vectorized and dones:
                     states, _ = env.reset()
-                    states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
