@@ -199,24 +199,24 @@ class TrainingAgent:
 
             is_vectorized = hasattr(env, "num_envs")
             
-            episode_reward = 0
-            
             states, _ = env.reset()
-            states = states.reshape(states.shape[0], -1)
+            states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
+
+            episode_reward = 0
             for _ in range(self.training_options.get('time_steps')):
                 actions = _select_action(states)
                 if actions.size == 1:
                     actions = actions.item()
                 states, rewards, dones, _, _ = env.step(actions)
-                states = states.reshape(states.shape[0], -1)
-                
+                states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
+
                 rewards = torch.as_tensor(rewards)
                 episode_reward += rewards.sum().item()
                 self.trainer.save_reward(rewards)
                 
                 if not is_vectorized and dones:
                     states, _ = env.reset()
-                    states = states.reshape(states.shape[0], -1)
+                    states = torch.from_numpy(states).flatten(1 if is_vectorized else 0)
                     
             duration = time.perf_counter() - start_time
             print(f"Episode Complete in {duration:.2f}s.")
